@@ -1,0 +1,112 @@
+https://search.brave.com/ask?q=moonshot+ai+founder+contact&conversation=097fe1e179741fa2d7063a8fce63d4307b5e#lie7Qq85Bpon6Zl1gY-gKnvAO9wPjB60-adJgTUHMIg#!/usr/bin/env python3
+"""poseidon_dispatch.py — 5-node LLM swarm, single file, no framework."""
+import requests, json, time, os
+from pathlib import Path
+
+# ─── CONFIG ───────────────────────────────────────────────────────────
+NODES = {
+    "summoner": {
+        "url": "https://api.moonshot.cn/v1/chat/completions",
+        "key": os.environ["MOONSHOT_KEY"],
+        "model": "moonshot-v1-128k",
+        "system": "You are the Summoner. Decompose the task into sub-tasks. Output JSON: {\"subtasks\": [{\"node\": \"<name>\", \"instruction\": \"<text>\"}]}"
+    },
+    "architect": {
+        "url": "https://api.anthropic.com/v1/messages",
+        "key": os.environ["ANTHROPIC_KEY"],
+        "model": "claude-sonnet-4-20250514",
+        "system": "You are the Architect. Design structure, constraints, patterns. Be precise."
+    },
+    "fuego": {
+        "url": "https://api.openai.com/v1/chat/completions",
+        "key": os.environ["OPENAI_KEY"],
+        "model": "gpt-4o",
+        "system": "You are Fuego. Execute. Generate code, tools, integrations. Ship it."
+    },
+    "shadow": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+        "key": os.environ["GEMINI_KEY"],
+        "model": "gemini-2.0-flash",
+        "system": "You are Shadow. Find every flaw, bias, and failure mode. Be adversarial."
+    },
+}
+
+MEMORY_FILE = Path("swarm_memory.json")
+
+# ─── MEMORY ───────────────────────────────────────────────────────────
+def load_memory() -> dict:
+    if MEMORY_FILE.exists():
+        return json.loads(MEMORY_FILE.read_text())
+    return {"sessions": [], "learnings": []}
+
+def commit_memory(summary: str):
+    mem = load_memory()
+    mem["learnings"].append({"ts": time.strftime("%Y-%m-%d %H:%M"), "summary": summary})
+    mem["learnings"] = mem["learnings"][-20:]  # keep last 20
+    MEMORY_FILE.write_text(json.dumps(mem, indent=2))
+
+# ─── CALL LAYER ───────────────────────────────────────────────────────
+def call_node(node_name: str, prompt: str) -> str:
+    cfg = NODES[node_name]
+    if node_name == "shadow":
+        # Gemini uses a different API shape
+        r = requests.post(
+            f"{cfg['url']}?key={cfg['key']}",
+            json={"contents": [{"parts": [{"text": f"{cfg['system']}\n\n{prompt}"}]}]}
+        )
+        return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    elif node_name == "architect":
+        # Anthropic uses a different API shape
+        r = requests.post(
+            cfg["url"],
+            headers={"x-api-key": cfg["key"], "anthropic-version": "2023-06-01"},
+            json={"model": cfg["model"], "max_tokens": 4096,
+                  "system": cfg["system"],
+                  "messages": [{"role": "user", "content": prompt}]}
+        )
+        return r.json()["content"][0]["text"]
+    else:
+        # OpenAI-compatible (Moonshot, OpenAI)
+        r = requests.post(
+            cfg["url"],
+            headers={"Authorization": f"Bearer {cfg['key']}"},
+            json={"model": cfg["model"],
+                  "messages": [{"role": "system", "content": cfg["system"]},
+                               {"role": "user", "content": prompt}]}
+        )
+        return r.json()["choices"][0]["message"]["content"]
+
+# ─── SWARM CYCLE ──────────────────────────────────────────────────────
+def run_swarm(task: str):
+    mem = load_memory()
+    context = "\n".join(l["summary"] for l in mem["learnings"][-5:])
+    print(f"[SWARM] Task: {task}\n[SWARM] Memory context: {len(context)} chars\n")
+
+    # 1. INCEPTION — Summoner decomposes
+    print("[1/5] Summoner decomposing...")
+    raw = call_node("summoner", f"Context:\n{context}\n\nTask:\n{task}")
+    try:
+        plan = json.loads(raw[raw.index("{"):raw.rindex("}")+1])
+    except (ValueError, json.JSONDecodeError):
+        plan = {"subtasks": [{"node": "architect", "instruction": raw}]}
+
+    # 2. DISPATCH — Route to nodes in parallel (sequential here, parallel with threads)
+    outputs = {}
+    for i, st in enumerate(plan["subtasks"], 1):
+        node = st["node"] if st["node"] in NODES else "architect"
+        print(f"[2/5] Dispatching to {node} ({i}/{len(plan['subtasks'])})...")
+        outputs[node] = call_node(node, st["instruction"])
+
+    # 3. SHADOW — Adversarial critique
+    print("[3/5] Shadow critiquing...")
+    critique = call_node("shadow", f"Critique these outputs for flaws, gaps, and failure modes:\n\n{json.dumps(outputs, indent=2)}")
+
+    # 4. RECONCILE — Architect integrates critique
+    print("[4/5] Architect reconciling...")
+    reconciled = call_node("architect", f"Original outputs:\n{json.dumps(outputs, indent=2)}\n\nCritique:\n{critique}\n\nReconcile. Produce the final version.")
+
+    # 5. SYNTHESIS + MEMORY
+    print("[5/5] Summoner synthesizing...")okay ty
+    
+    final = call_node("summoner", f"Merge into a single deliverable:\n\n{reconciled}")  
+    
