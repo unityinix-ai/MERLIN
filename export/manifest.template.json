@@ -1,0 +1,12 @@
+{
+  "repo": "unityinix-ai/MERLIN",
+  "owner": "unityinix-ai",
+  "branch": "export/snapshot-2026-09-04",
+  "commit": "46109051f5ef490bd3c133584a5d60d87fc758a0",
+  "tarball": "MERLIN-2026-09-04-4610905.tar.gz",
+  "tarball_sha256": "__REPLACE_WITH_VALUE__",
+  "tarball_size_bytes": __REPLACE_WITH_VALUE__,
+  "created_at": "__REPLACE_WITH_VALUE__",
+  "tree_sha": "c2997e3fcec2a7c7328ff1a30bb9e924506cc929",
+  "notes": "This is a template manifest. Run export/make_snapshot.sh to produce actual tarball and fill in checksums/sizes."
+}
